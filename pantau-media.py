@@ -18,7 +18,23 @@ st.markdown("---")
 # Sidebar - Parameter Input
 st.sidebar.header("⚙️ Filter & Parameter Pencarian")
 
-# 1. Kategori Bidang
+# 1. Rentang Waktu Pencarian (BARU)
+time_filter = st.sidebar.selectbox(
+    "📅 Rentang Waktu Pencarian:",
+    ["7 Hari Terakhir", "24 Jam Terakhir", "1 Bulan Terakhir", "Semua Waktu"],
+    index=0
+)
+
+# Mapping kode timelimit DuckDuckGo
+time_limit_code = None
+if time_filter == "24 Jam Terakhir":
+    time_limit_code = "d"
+elif time_filter == "7 Hari Terakhir":
+    time_limit_code = "w"
+elif time_filter == "1 Bulan Terakhir":
+    time_limit_code = "m"
+
+# 2. Kategori Bidang
 kategori = st.sidebar.selectbox(
     "Pilih Kategori Bidang:",
     [
@@ -30,38 +46,36 @@ kategori = st.sidebar.selectbox(
     ]
 )
 
-# Set kata kunci bawaan berdasarkan kategori
+# Kata kunci dibuat lebih simpel agar pencarian lebih luas
 default_keywords = ""
 if "Hidrometeorologi" in kategori:
-    default_keywords = "banjir OR longsor OR kekeringan OR angin kencang OR puting beliung"
+    default_keywords = "banjir OR longsor"
 elif "Kualitas Udara" in kategori:
-    default_keywords = "karhutla OR kebakaran hutan OR asap OR kualitas udara OR ISPU"
+    default_keywords = "karhutla OR kebakaran hutan"
 elif "Gempabumi" in kategori:
-    default_keywords = "gempa OR gempabumi OR tsunami OR kerusakan bangunan"
+    default_keywords = "gempa OR tsunami"
 elif "Pertanian" in kategori:
-    default_keywords = "gagal panen OR kekeringan sawah OR hama iklim OR cuaca ekstrim pertanian"
+    default_keywords = "gagal panen OR kekeringan"
 else:
-    default_keywords = "banjir OR karhutla OR gempa OR iklim"
+    default_keywords = "banjir OR karhutla OR gempa"
 
-# 2. Input Kata Kunci
-keywords = st.sidebar.text_area("Kata Kunci Spesifik (Pisahkan dengan OR / spasi):", value=default_keywords)
+# 3. Input Kata Kunci
+keywords = st.sidebar.text_input("Kata Kunci Spesifik:", value=default_keywords)
 
-# 3. Cakupan Wilayah
+# 4. Cakupan Wilayah
 wilayah_option = st.sidebar.selectbox(
     "Pilih Cakupan Wilayah:",
-    ["Sulawesi Tengah (Spesifik Kabupaten/Kota)", "Indonesia (Nasional)", "Kustom Wilayah Lain"]
+    ["Sulawesi Tengah", "Palu", "Sigi", "Donggala", "Poso", "Parigi", "Morowali", "Tolitoli", "Indonesia (Nasional)", "Kustom Wilayah"]
 )
 
-if wilayah_option == "Sulawesi Tengah (Spesifik Kabupaten/Kota)":
-    wilayah_str = "Palu OR Sigi OR Donggala OR Poso OR Parigi OR Morowali OR Tolitoli OR Buol OR Banggai OR Tojo Una-Una"
-elif wilayah_option == "Indonesia (Nasional)":
-    wilayah_str = "Indonesia"
-else:
+if wilayah_option == "Kustom Wilayah":
     wilayah_str = st.sidebar.text_input("Masukkan Wilayah Kustom:", value="Sulawesi Tengah")
+else:
+    wilayah_str = wilayah_option
 
-st.sidebar.info(f"📍 **Target Wilayah Aktif:**\n{wilayah_str}")
+st.sidebar.info(f"📍 **Target Wilayah Aktif:** {wilayah_str}")
 
-# 4. Target Platform Media
+# 5. Target Platform Media
 st.sidebar.subheader("🌐 Target Platform")
 check_news = st.sidebar.checkbox("Berita Web / Google News", value=True)
 check_x = st.sidebar.checkbox("Twitter / X", value=True)
@@ -77,16 +91,17 @@ if btn_search:
     if not keywords:
         st.error("Harap masukkan kata kunci pencarian!")
     else:
-        st.info("🔄 Sedang memindai postingan media sosial dan berita terkini...")
+        st.info(f"🔄 Sedang memindai postingan 7 hari terakhir untuk kata kunci: **{keywords}** di wilayah **{wilayah_str}**...")
         
-        base_query = f"({keywords}) ({wilayah_str})"
+        # Buat query yang fleksibel
+        query_text = f"{keywords} {wilayah_str}"
         targets = []
         
-        if check_news: targets.append(("Berita Web", base_query))
-        if check_x: targets.append(("Twitter / X", f"site:x.com {base_query}"))
-        if check_fb: targets.append(("Facebook", f"site:facebook.com {base_query}"))
-        if check_ig: targets.append(("Instagram/Threads", f"(site:instagram.com OR site:threads.net) {base_query}"))
-        if check_tiktok: targets.append(("TikTok", f"site:tiktok.com {base_query}"))
+        if check_news: targets.append(("Berita Web", query_text))
+        if check_x: targets.append(("Twitter / X", f"site:x.com {query_text}"))
+        if check_fb: targets.append(("Facebook", f"site:facebook.com {query_text}"))
+        if check_ig: targets.append(("Instagram/Threads", f"site:instagram.com {query_text}"))
+        if check_tiktok: targets.append(("TikTok", f"site:tiktok.com {query_text}"))
         
         results = []
         ddgs = DDGS()
@@ -94,29 +109,35 @@ if btn_search:
         progress_bar = st.progress(0)
         total_targets = len(targets)
         
-        for idx, (source_name, query_str) in enumerate(targets):
+        for idx, (source_name, q_str) in enumerate(targets):
             try:
-                # Pencarian via DuckDuckGo Text & News Search
-                search_results = ddgs.text(query_str, max_results=8)
-                for res in search_results:
-                    results.append({
-                        "Platform": source_name,
-                        "Judul / Cuplikan": res.get("title", ""),
-                        "Ringkasan Konten": res.get("body", ""),
-                        "Link Tautan": res.get("href", ""),
-                        "Waktu Ditemukan": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    })
+                # Menggunakan parameter timelimit='w' untuk 7 hari terakhir
+                search_results = ddgs.text(
+                    keywords=q_str, 
+                    region="id-id", 
+                    timelimit=time_limit_code, 
+                    max_results=10
+                )
+                
+                if search_results:
+                    for res in search_results:
+                        results.append({
+                            "Platform": source_name,
+                            "Judul / Cuplikan": res.get("title", ""),
+                            "Ringkasan Konten": res.get("body", ""),
+                            "Link Tautan": res.get("href", ""),
+                            "Waktu Penarikan": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        })
             except Exception as e:
                 st.warning(f"Gagal memindai {source_name}: {e}")
             
             progress_bar.progress((idx + 1) / total_targets)
             
-        st.success(f"✅ Pemantauan selesai! Ditemukan {len(results)} potensi isu hangat.")
+        st.success(f"✅ Pemantauan selesai! Ditemukan {len(results)} hasil pencarian.")
         
         if results:
             df = pd.DataFrame(results)
             
-            # Tab Tampilan Data
             tab1, tab2 = st.tabs(["📋 Tabel & Detail Hasil", "📥 Download Data (CSV)"])
             
             with tab1:
@@ -128,19 +149,18 @@ if btn_search:
                     with st.expander(f"[{row['Platform']}] {row['Judul / Cuplikan']}"):
                         st.write(f"**Ringkasan:** {row['Ringkasan Konten']}")
                         st.write(f"**Tautan:** [Buka Postingan / Berita]({row['Link Tautan']})")
-                        st.caption(f"Waktu Penarikan: {row['Waktu Ditemukan']}")
+                        st.caption(f"Waktu Penarikan: {row['Waktu Penarikan']}")
 
             with tab2:
-                st.subheader("Unduh Laporan untuk Analisis Lebih Lanjut")
-                
+                st.subheader("Unduh Laporan")
                 csv = df.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📄 Download Data (Format CSV)",
                     data=csv,
-                    file_name=f"Pantau_Media_BMKG_Sulteng_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    file_name=f"Pantau_Media_BMKG_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
                 )
         else:
-            st.warning("Tidak ditemukan postingan/berita terkini dengan kombinasi kata kunci dan wilayah tersebut.")
+            st.warning("Pencarian tidak menemukan hasil. Coba sederhanakan kata kunci (misal hanya: 'banjir Palu' atau 'karhutla Sulteng').")
 else:
-    st.write("👉 Silakan atur parameter di **sidebar kiri**, lalu klik tombol **'Mulai Pemantauan Realtime'** untuk memulai analisis.")
+    st.write("👉 Pilih rentang waktu dan parameter di **sidebar kiri**, lalu klik **'Mulai Pemantauan Realtime'**.")
