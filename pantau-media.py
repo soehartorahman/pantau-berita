@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Konfigurasi Halaman Streamlit
 st.set_page_config(
-    page_title="BMKG Sulteng - Early Warning & Issue Monitor",
+    page_title="BMKG Sulteng - Media Monitor",
     page_icon="🌩️",
     layout="wide"
 )
@@ -59,7 +59,7 @@ elif wilayah_option == "Indonesia (Nasional)":
 else:
     wilayah_str = st.sidebar.text_input("Masukkan Wilayah Kustom:", value="Sulawesi Tengah")
 
-st.sidebar.info(f"📍 **Target Wilayah Active:**\n{wilayah_str}")
+st.sidebar.info(f"📍 **Target Wilayah Aktif:**\n{wilayah_str}")
 
 # 4. Target Platform Media
 st.sidebar.subheader("🌐 Target Platform")
@@ -117,10 +117,9 @@ if btn_search:
             df = pd.DataFrame(results)
             
             # Tab Tampilan Data
-            tab1, tab2 = st.tabs(["📋 Tabel & Detail Hasil", "📥 Download Data (Excel/CSV)"])
+            tab1, tab2 = st.tabs(["📋 Tabel & Detail Hasil", "📥 Download Data (CSV)"])
             
             with tab1:
-                # Tampilkan Ringkasan Jumlah per Platform
                 st.subheader("Statistik Hasil per Platform")
                 st.bar_chart(df["Platform"].value_counts())
                 
@@ -134,12 +133,11 @@ if btn_search:
             with tab2:
                 st.subheader("Unduh Laporan untuk Analisis Lebih Lanjut")
                 
-                # Download CSV
                 csv = df.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📄 Download Data (Format CSV)",
                     data=csv,
-                    file_name=f"Laporan_BMKG_Sulteng_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    file_name=f"Pantau_Media_BMKG_Sulteng_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
                 )
         else:
