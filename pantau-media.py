@@ -1,7 +1,8 @@
 import streamlit as st
-from duckduckgo_search import DDGS
+import feedparser
 import pandas as pd
 from datetime import datetime
+import urllib.parse
 
 # Konfigurasi Halaman Streamlit
 st.set_page_config(
@@ -18,46 +19,44 @@ st.markdown("---")
 # Sidebar - Parameter Input
 st.sidebar.header("⚙️ Filter & Parameter Pencarian")
 
-# 1. Rentang Waktu Pencarian (BARU)
+# 1. Rentang Waktu
 time_filter = st.sidebar.selectbox(
     "📅 Rentang Waktu Pencarian:",
-    ["7 Hari Terakhir", "24 Jam Terakhir", "1 Bulan Terakhir", "Semua Waktu"],
+    ["7 Hari Terakhir", "24 Jam Terakhir", "30 Hari Terakhir"],
     index=0
 )
 
-# Mapping kode timelimit DuckDuckGo
-time_limit_code = None
-if time_filter == "24 Jam Terakhir":
-    time_limit_code = "d"
-elif time_filter == "7 Hari Terakhir":
-    time_limit_code = "w"
-elif time_filter == "1 Bulan Terakhir":
-    time_limit_code = "m"
+time_limit_map = {
+    "24 Jam Terakhir": "d",
+    "7 Hari Terakhir": "w",
+    "30 Hari Terakhir": "m"
+}
+selected_time = time_limit_map[time_filter]
 
 # 2. Kategori Bidang
 kategori = st.sidebar.selectbox(
     "Pilih Kategori Bidang:",
     [
-        "Bencana Hidrometeorologi (Banjir, Longsor, Kekeringan, Puting Beliung)",
-        "Kualitas Udara & Karhutla (Asap, Hotspot, ISPU)",
+        "Bencana Hidrometeorologi",
+        "Kualitas Udara & Karhutla",
         "Gempabumi & Tsunami",
-        "Dampak Pertanian & Perubahan Iklim (Gagal Panen, Hama)",
-        "Semua Bidang / Custom"
+        "Dampak Pertanian & Perubahan Iklim",
+        "Kustom / Semua"
     ]
 )
 
-# Kata kunci dibuat lebih simpel agar pencarian lebih luas
+# Presets Kata Kunci Sederhana (Tanpa OR bertumpuk)
 default_keywords = ""
-if "Hidrometeorologi" in kategori:
-    default_keywords = "banjir OR longsor"
-elif "Kualitas Udara" in kategori:
-    default_keywords = "karhutla OR kebakaran hutan"
-elif "Gempabumi" in kategori:
-    default_keywords = "gempa OR tsunami"
-elif "Pertanian" in kategori:
-    default_keywords = "gagal panen OR kekeringan"
+if kategori == "Bencana Hidrometeorologi":
+    default_keywords = "banjir longsor"
+elif kategori == "Kualitas Udara & Karhutla":
+    default_keywords = "karhutla kebakaran hutan"
+elif kategori == "Gempabumi & Tsunami":
+    default_keywords = "gempa tsunami"
+elif kategori == "Dampak Pertanian & Perubahan Iklim":
+    default_keywords = "kekeringan gagal panen"
 else:
-    default_keywords = "banjir OR karhutla OR gempa"
+    default_keywords = "cuaca ekstrem"
 
 # 3. Input Kata Kunci
 keywords = st.sidebar.text_input("Kata Kunci Spesifik:", value=default_keywords)
@@ -65,7 +64,7 @@ keywords = st.sidebar.text_input("Kata Kunci Spesifik:", value=default_keywords)
 # 4. Cakupan Wilayah
 wilayah_option = st.sidebar.selectbox(
     "Pilih Cakupan Wilayah:",
-    ["Sulawesi Tengah", "Palu", "Sigi", "Donggala", "Poso", "Parigi", "Morowali", "Tolitoli", "Indonesia (Nasional)", "Kustom Wilayah"]
+    ["Sulawesi Tengah", "Palu", "Sigi", "Donggala", "Poso", "Parigi", "Morowali", "Tolitoli", "Buol", "Banggai", "Indonesia", "Kustom Wilayah"]
 )
 
 if wilayah_option == "Kustom Wilayah":
@@ -73,83 +72,73 @@ if wilayah_option == "Kustom Wilayah":
 else:
     wilayah_str = wilayah_option
 
-st.sidebar.info(f"📍 **Target Wilayah Aktif:** {wilayah_str}")
+st.sidebar.info(f"📍 **Target Query:** `{keywords} {wilayah_str}`")
 
 # 5. Target Platform Media
-st.sidebar.subheader("🌐 Target Platform")
-check_news = st.sidebar.checkbox("Berita Web / Google News", value=True)
-check_x = st.sidebar.checkbox("Twitter / X", value=True)
-check_fb = st.sidebar.checkbox("Facebook", value=True)
-check_ig = st.sidebar.checkbox("Instagram & Threads", value=True)
-check_tiktok = st.sidebar.checkbox("TikTok", value=True)
+st.sidebar.subheader("🌐 Sumber Informasi")
+check_news = st.sidebar.checkbox("Portal Berita Media Nasional/Lokal", value=True)
+check_socmed = st.sidebar.checkbox("Postingan Medsos / Media Viral", value=True)
 
 # Tombol Eksekusi
 btn_search = st.sidebar.button("🔍 Mulai Pemantauan Realtime", use_container_width=True, type="primary")
+
+def fetch_google_news(query, time_range):
+    # Encoding query untuk URL Google News RSS
+    full_query = f"{query} when:{time_range}"
+    encoded_query = urllib.parse.quote(full_query)
+    rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=id&gl=ID&ceid=ID:id"
+    
+    feed = feedparser.parse(rss_url)
+    results = []
+    
+    for entry in feed.entries:
+        # Ekstrak nama media dari title
+        title_parts = entry.title.rsplit(" - ", 1)
+        title = title_parts[0]
+        source = title_parts[1] if len(title_parts) > 1 else "Berita Online"
+        
+        results.append({
+            "Sumber / Media": source,
+            "Judul Berita / Post": title,
+            "Waktu Publish": entry.get("published", "Tidak diketahui"),
+            "Link Tautan": entry.link,
+            "Waktu Penarikan": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+    return results
 
 # Area Hasil Pencarian
 if btn_search:
     if not keywords:
         st.error("Harap masukkan kata kunci pencarian!")
     else:
-        st.info(f"🔄 Sedang memindai postingan 7 hari terakhir untuk kata kunci: **{keywords}** di wilayah **{wilayah_str}**...")
+        st.info(f"🔄 Sedang memindai isu terkini ({time_filter}) untuk query: **{keywords} {wilayah_str}**...")
         
-        # Buat query yang fleksibel
         query_text = f"{keywords} {wilayah_str}"
-        targets = []
+        results = fetch_google_news(query_text, selected_time)
         
-        if check_news: targets.append(("Berita Web", query_text))
-        if check_x: targets.append(("Twitter / X", f"site:x.com {query_text}"))
-        if check_fb: targets.append(("Facebook", f"site:facebook.com {query_text}"))
-        if check_ig: targets.append(("Instagram/Threads", f"site:instagram.com {query_text}"))
-        if check_tiktok: targets.append(("TikTok", f"site:tiktok.com {query_text}"))
-        
-        results = []
-        ddgs = DDGS()
-        
-        progress_bar = st.progress(0)
-        total_targets = len(targets)
-        
-        for idx, (source_name, q_str) in enumerate(targets):
-            try:
-                # Menggunakan parameter timelimit='w' untuk 7 hari terakhir
-                search_results = ddgs.text(
-                    keywords=q_str, 
-                    region="id-id", 
-                    timelimit=time_limit_code, 
-                    max_results=10
-                )
-                
-                if search_results:
-                    for res in search_results:
-                        results.append({
-                            "Platform": source_name,
-                            "Judul / Cuplikan": res.get("title", ""),
-                            "Ringkasan Konten": res.get("body", ""),
-                            "Link Tautan": res.get("href", ""),
-                            "Waktu Penarikan": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        })
-            except Exception as e:
-                st.warning(f"Gagal memindai {source_name}: {e}")
-            
-            progress_bar.progress((idx + 1) / total_targets)
-            
-        st.success(f"✅ Pemantauan selesai! Ditemukan {len(results)} hasil pencarian.")
+        # Tambahkan variasi pencarian medsos jika dicentang
+        if check_socmed:
+            query_socmed = f"{keywords} {wilayah_str} viral media sosial"
+            socmed_results = fetch_google_news(query_socmed, selected_time)
+            results.extend(socmed_results)
+
+        st.success(f"✅ Pemantauan selesai! Ditemukan {len(results)} temuan relevan.")
         
         if results:
-            df = pd.DataFrame(results)
+            df = pd.DataFrame(results).drop_duplicates(subset=["Judul Berita / Post"])
             
             tab1, tab2 = st.tabs(["📋 Tabel & Detail Hasil", "📥 Download Data (CSV)"])
             
             with tab1:
-                st.subheader("Statistik Hasil per Platform")
-                st.bar_chart(df["Platform"].value_counts())
+                st.subheader("Distribusi Sumber Berita / Media")
+                st.bar_chart(df["Sumber / Media"].value_counts().head(10))
                 
-                st.subheader("Daftar Temuan Postingan & Berita")
+                st.subheader("Daftar Temuan Terkini")
                 for index, row in df.iterrows():
-                    with st.expander(f"[{row['Platform']}] {row['Judul / Cuplikan']}"):
-                        st.write(f"**Ringkasan:** {row['Ringkasan Konten']}")
-                        st.write(f"**Tautan:** [Buka Postingan / Berita]({row['Link Tautan']})")
-                        st.caption(f"Waktu Penarikan: {row['Waktu Penarikan']}")
+                    with st.expander(f"[{row['Sumber / Media']}] {row['Judul Berita / Post']}"):
+                        st.write(f"**Waktu Publish:** {row['Waktu Publish']}")
+                        st.write(f"**Tautan Asli:** [Buka Berita / Media]({row['Link Tautan']})")
+                        st.caption(f"Waktu Penarikan Data: {row['Waktu Penarikan']}")
 
             with tab2:
                 st.subheader("Unduh Laporan")
@@ -161,6 +150,6 @@ if btn_search:
                     mime="text/csv",
                 )
         else:
-            st.warning("Pencarian tidak menemukan hasil. Coba sederhanakan kata kunci (misal hanya: 'banjir Palu' atau 'karhutla Sulteng').")
+            st.warning("Tidak ditemukan isu terkini dalam rentang waktu tersebut. Coba perluas cakupan wilayah atau ganti kata kunci.")
 else:
-    st.write("👉 Pilih rentang waktu dan parameter di **sidebar kiri**, lalu klik **'Mulai Pemantauan Realtime'**.")
+    st.write("👉 Silakan atur parameter di **sidebar kiri**, lalu klik **'Mulai Pemantauan Realtime'**.")
